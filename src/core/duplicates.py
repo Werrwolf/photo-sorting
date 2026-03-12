@@ -1,10 +1,13 @@
 from collections import defaultdict
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from core.cache import HashCache
 from core.file_hash import compute_file_hash
 from core.hasher import compute_hash
+
+ProgressCallback = Callable[[str], None]
 
 
 def _compute_exact_hash(path: Path) -> tuple[Path, str | None]:
@@ -42,12 +45,15 @@ def _resolve_hashes_parallel(
     max_workers: int,
     batch_size: int,
     label: str,
+    progress_callback: ProgressCallback | None = None,
 ) -> list[tuple[Path, str]]:
     resolved: list[tuple[Path, str]] = []
     pending_cache_writes: list[tuple[Path, str]] = []
 
     total = len(paths)
     if total == 0:
+        if progress_callback is not None:
+            progress_callback(f"{label}: nothing to hash")
         return resolved
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -57,7 +63,10 @@ def _resolve_hashes_parallel(
             path, hash_value = future.result()
 
             if i % 100 == 0 or i == total:
-                print(f"{label} {i}/{total}", end="\r")
+                message = f"{label}: {i}/{total}"
+                print(message, end="\r")
+                if progress_callback is not None:
+                    progress_callback(message)
 
             if hash_value is None:
                 continue
@@ -90,6 +99,7 @@ def find_exact_duplicates(
     cache: HashCache,
     max_workers: int = 8,
     batch_size: int = 200,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, list[Path]]:
     """
     Find files that are exact binary duplicates.
@@ -115,6 +125,8 @@ def find_exact_duplicates(
         Number of worker threads used for hashing.
     batch_size : int
         Number of hashes written to the cache in one database transaction.
+    progress_callback : ProgressCallback | None
+        Optional callback for reporting progress updates.
 
     Returns
     -------
@@ -133,6 +145,7 @@ def find_exact_duplicates(
             max_workers=max_workers,
             batch_size=batch_size,
             label="Exact hashing",
+            progress_callback=progress_callback,
         )
     )
 
@@ -145,6 +158,7 @@ def find_visual_duplicates(
     exact_duplicates: dict[str, list[Path]] | None = None,
     max_workers: int = 8,
     batch_size: int = 200,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, list[Path]]:
     """
     Find visually similar images using perceptual hashing.
@@ -173,6 +187,8 @@ def find_visual_duplicates(
         Number of worker threads used for hashing.
     batch_size : int
         Number of hashes written to the cache per transaction.
+    progress_callback : ProgressCallback | None
+        Optional callback for reporting progress updates.
 
     Returns
     -------
@@ -199,6 +215,7 @@ def find_visual_duplicates(
             max_workers=max_workers,
             batch_size=batch_size,
             label="Visual hashing",
+            progress_callback=progress_callback,
         )
     )
 
