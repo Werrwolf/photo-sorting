@@ -3,3 +3,4 @@
 __pycache__/
 *.pyc
 test_images/
+hash_cache.db

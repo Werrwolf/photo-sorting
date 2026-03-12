@@ -2,6 +2,7 @@ from pathlib import Path
 
 from core.scanner import scan_images
 from core.duplicates import find_duplicates
+from core.cache import HashCache
 
 
 def main():
@@ -12,11 +13,13 @@ def main():
 
     print(f"Found {len(images)} images")
 
-    duplicates = find_duplicates(images)
+    cache = HashCache(Path("hash_cache.db"))
+
+    duplicates = find_duplicates(images, cache)
 
     print(f"\nDuplicate groups: {len(duplicates)}\n")
 
-    for h, files in list(duplicates.items())[:5]:
+    for files in list(duplicates.values())[:5]:
 
         print("----")
         for f in files:
