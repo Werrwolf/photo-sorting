@@ -1,11 +1,24 @@
 from collections import defaultdict
+from pathlib import Path
+
+from core.hasher import compute_hash
 
 
-def group_by_hash(paths, hash_func):
-    groups = defaultdict(list)
+def find_duplicates(paths: list[Path]):
+    hash_map = defaultdict(list)
 
-    for p in paths:
-        h = hash_func(p)
-        groups[h].append(p)
+    for path in paths:
+        h = compute_hash(path)
 
-    return {h: g for h, g in groups.items() if len(g) > 1}
+        if h is None:
+            continue
+
+        hash_map[str(h)].append(path)
+
+    duplicates = {
+        hash_value: files
+        for hash_value, files in hash_map.items()
+        if len(files) > 1
+    }
+
+    return duplicates

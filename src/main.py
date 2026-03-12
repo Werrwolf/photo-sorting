@@ -1,16 +1,26 @@
 from pathlib import Path
 
 from core.scanner import scan_images
+from core.duplicates import find_duplicates
 
 
-def main() -> None:
+def main():
+
     folder = Path(input("Enter folder path: ").strip())
-    image_files = scan_images(folder)
 
-    print(f"Found {len(image_files)} image(s).")
+    images = scan_images(folder)
 
-    for path in image_files[:10]:
-        print(path)
+    print(f"Found {len(images)} images")
+
+    duplicates = find_duplicates(images)
+
+    print(f"\nDuplicate groups: {len(duplicates)}\n")
+
+    for h, files in list(duplicates.items())[:5]:
+
+        print("----")
+        for f in files:
+            print(f)
 
 
 if __name__ == "__main__":
