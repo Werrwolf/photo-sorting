@@ -5,6 +5,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from PIL import Image, ImageTk
+
 from core.service import run_duplicate_scan
 
 
@@ -21,6 +23,9 @@ class PhotoSortingApp:
         self.visual_duplicates: dict[str, list[Path]] = {}
         self.current_groups: list[list[Path]] = []
 
+        self.current_preview_image = None
+        self.thumbnail_images = []
+
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -36,14 +41,17 @@ class PhotoSortingApp:
         )
         folder_entry.pack(side="left", padx=5, fill="x", expand=True)
 
-        ttk.Button(top_frame, text="Choose Folder", command=self.choose_folder).pack(
-            side="left",
-            padx=5,
-        )
-        ttk.Button(top_frame, text="Start Scan", command=self.start_scan).pack(
-            side="left",
-            padx=5,
-        )
+        ttk.Button(
+            top_frame,
+            text="Choose Folder",
+            command=self.choose_folder,
+        ).pack(side="left", padx=5)
+
+        ttk.Button(
+            top_frame,
+            text="Start Scan",
+            command=self.start_scan,
+        ).pack(side="left", padx=5)
 
         status_frame = ttk.Frame(self.root, padding=(10, 0, 10, 10))
         status_frame.pack(fill="x")
@@ -60,6 +68,7 @@ class PhotoSortingApp:
         content.add(right_panel, weight=2)
 
         ttk.Label(left_panel, text="Result Type").pack(anchor="w")
+
         self.result_type = ttk.Combobox(
             left_panel,
             values=["Exact duplicates", "Visual duplicates"],
@@ -70,18 +79,56 @@ class PhotoSortingApp:
         self.result_type.bind("<<ComboboxSelected>>", self.refresh_group_list)
 
         ttk.Label(left_panel, text="Duplicate Groups").pack(anchor="w")
+
         self.group_listbox = tk.Listbox(left_panel, exportselection=False)
         self.group_listbox.pack(fill="both", expand=True)
         self.group_listbox.bind("<<ListboxSelect>>", self.show_selected_group)
 
         ttk.Label(right_panel, text="Files in Selected Group").pack(anchor="w")
+
         self.file_listbox = tk.Listbox(right_panel, exportselection=False)
         self.file_listbox.pack(fill="both", expand=True)
+        self.file_listbox.bind("<<ListboxSelect>>", self.on_file_selected)
         self.file_listbox.bind("<Double-Button-1>", self.open_selected_file_location)
+
+        thumbnail_frame = ttk.Frame(right_panel)
+        thumbnail_frame.pack(fill="both", expand=True, pady=(10, 0))
+
+        self.thumb_canvas = tk.Canvas(thumbnail_frame)
+        self.thumb_canvas.pack(side="left", fill="both", expand=True)
+
+        scrollbar = ttk.Scrollbar(
+            thumbnail_frame,
+            orient="vertical",
+            command=self.thumb_canvas.yview,
+        )
+        scrollbar.pack(side="right", fill="y")
+
+        self.thumb_canvas.configure(yscrollcommand=scrollbar.set)
+
+        self.thumb_container = ttk.Frame(self.thumb_canvas)
+        self.thumb_canvas.create_window((0, 0), window=self.thumb_container, anchor="nw")
+
+        self.thumb_container.bind(
+            "<Configure>",
+            lambda e: self.thumb_canvas.configure(scrollregion=self.thumb_canvas.bbox("all")),
+        )
+
+        preview_container = ttk.Frame(right_panel)
+        preview_container.pack(fill="x")
+
+        self.preview_label = ttk.Label(preview_container)
+        self.preview_label.pack()
+
+        self.metadata_text = tk.Text(
+            preview_container,
+            height=6,
+            state="disabled",
+        )
+        self.metadata_text.pack(fill="x", pady=(10, 0))
 
         button_row = ttk.Frame(right_panel)
         button_row.pack(fill="x", pady=(10, 0))
-
         ttk.Button(
             button_row,
             text="Open Selected File Location",
@@ -107,6 +154,9 @@ class PhotoSortingApp:
         self.status_text.set("Starting scan...")
         self.group_listbox.delete(0, tk.END)
         self.file_listbox.delete(0, tk.END)
+        self.preview_label.configure(image="")
+        self.current_preview_image = None
+        self._set_metadata_text("")
         self.current_groups.clear()
 
         thread = threading.Thread(
@@ -150,6 +200,9 @@ class PhotoSortingApp:
         self.current_groups = groups
         self.group_listbox.delete(0, tk.END)
         self.file_listbox.delete(0, tk.END)
+        self.preview_label.configure(image="")
+        self.current_preview_image = None
+        self._set_metadata_text("")
 
         for index, group in enumerate(groups, start=1):
             self.group_listbox.insert(
@@ -169,6 +222,103 @@ class PhotoSortingApp:
 
         for path in group:
             self.file_listbox.insert(tk.END, str(path))
+
+        self.display_thumbnails(group)
+
+    def display_thumbnails(self, paths: list[Path]) -> None:
+        for widget in self.thumb_container.winfo_children():
+            widget.destroy()
+
+        self.thumbnail_images.clear()
+
+        thumb_size = (120, 120)
+        columns = 5
+
+        for index, path in enumerate(paths):
+            try:
+                img = Image.open(path)
+                img.thumbnail(thumb_size)
+
+                tk_img = ImageTk.PhotoImage(img)
+
+                label = ttk.Label(self.thumb_container, image=tk_img)
+                label.grid(row=index // columns, column=index % columns, padx=5, pady=5)
+
+                label.bind(
+                    "<Button-1>",
+                    lambda e, p=path: self.select_thumbnail_file(p),
+                )
+
+                self.thumbnail_images.append(tk_img)
+
+            except Exception:
+                continue
+
+    def select_thumbnail_file(self, path: Path) -> None:
+        for i in range(self.file_listbox.size()):
+            if Path(self.file_listbox.get(i)) == path:
+                self.file_listbox.selection_clear(0, tk.END)
+                self.file_listbox.selection_set(i)
+                self.file_listbox.see(i)
+                break
+
+        self.display_image_preview(path)
+        self.display_metadata(path)
+
+    def on_file_selected(self, event=None) -> None:
+        selection = self.file_listbox.curselection()
+        if not selection:
+            return
+
+        path = Path(self.file_listbox.get(selection[0]))
+
+        self.display_image_preview(path)
+        self.display_metadata(path)
+
+    def display_image_preview(self, path: Path) -> None:
+        try:
+            with Image.open(path) as img:
+                max_size = (500, 400)
+                img.thumbnail(max_size)
+
+                tk_img = ImageTk.PhotoImage(img.copy())
+
+            self.preview_label.configure(image=tk_img)
+            self.current_preview_image = tk_img
+
+        except Exception:
+            self.preview_label.configure(image="")
+            self.current_preview_image = None
+
+    def display_metadata(self, path: Path) -> None:
+        try:
+            stat = path.stat()
+
+            info = [
+                f"Path: {path}",
+                f"Size: {stat.st_size / (1024 * 1024):.2f} MB",
+                f"Modified: {stat.st_mtime}",
+            ]
+
+            try:
+                with Image.open(path) as img:
+                    info.append(f"Resolution: {img.width} x {img.height}")
+                    info.append(f"Format: {img.format}")
+            except Exception:
+                pass
+
+            text = "\n".join(info)
+
+        except Exception as exc:
+            text = f"Metadata unavailable\n{exc}"
+
+        self._set_metadata_text(text)
+
+    def _set_metadata_text(self, text: str) -> None:
+        self.metadata_text.configure(state="normal")
+        self.metadata_text.delete("1.0", tk.END)
+        self.metadata_text.insert(tk.END, text)
+        self.metadata_text.configure(state="disabled")
 
     def open_selected_file_location(self, event=None) -> None:
         selection = self.file_listbox.curselection()
