@@ -1,8 +1,17 @@
 from pathlib import Path
 
 from core.cache import HashCache
-from core.duplicates import find_duplicates
+from core.duplicates import find_exact_duplicates, find_visual_duplicates
 from core.scanner import scan_images
+
+
+def print_groups(title: str, groups: dict[str, list[Path]], limit: int = 5) -> None:
+    print(f"\n{title}: {len(groups)}\n")
+
+    for files in list(groups.values())[:limit]:
+        print("----")
+        for file_path in files:
+            print(file_path)
 
 
 def main() -> None:
@@ -14,14 +23,18 @@ def main() -> None:
     cache = HashCache(Path("hash_cache.db"))
 
     try:
-        duplicates = find_duplicates(images, cache, max_workers=8, batch_size=200)
+        exact_duplicates = find_exact_duplicates(images, cache, max_workers=8, batch_size=200)
+        visual_duplicates = find_visual_duplicates(
+            images,
+            cache,
+            exact_duplicates=exact_duplicates,
+            max_workers=8,
+            batch_size=200,
+        )
 
-        print(f"\nDuplicate groups: {len(duplicates)}\n")
+        print_groups("Exact duplicate groups", exact_duplicates)
+        print_groups("Visual duplicate groups", visual_duplicates)
 
-        for files in list(duplicates.values())[:5]:
-            print("----")
-            for file_path in files:
-                print(file_path)
     finally:
         cache.close()
 
