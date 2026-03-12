@@ -14,7 +14,7 @@ class PhotoSortingApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Photo Sorting")
-        self.root.geometry("1100x700")
+        self.root.geometry("1300x900")
 
         self.selected_folder = tk.StringVar()
         self.status_text = tk.StringVar(value="Ready")
@@ -129,11 +129,18 @@ class PhotoSortingApp:
 
         button_row = ttk.Frame(right_panel)
         button_row.pack(fill="x", pady=(10, 0))
+
         ttk.Button(
             button_row,
-            text="Open Selected File Location",
+            text="Open Selected Location",
             command=self.open_selected_file_location,
-        ).pack(side="left")
+        ).pack(side="left", padx=5)
+
+        ttk.Button(
+            button_row,
+            text="Open All Locations",
+            command=self.open_all_file_locations,
+        ).pack(side="left", padx=5)
 
     def choose_folder(self) -> None:
         folder = filedialog.askdirectory()
@@ -320,7 +327,7 @@ class PhotoSortingApp:
         self.metadata_text.insert(tk.END, text)
         self.metadata_text.configure(state="disabled")
 
-    def open_selected_file_location(self, event=None) -> None:
+    def  open_selected_file_location(self, event=None) -> None:
         selection = self.file_listbox.curselection()
         if not selection:
             return
@@ -332,6 +339,25 @@ class PhotoSortingApp:
             return
 
         self._open_in_file_manager(selected_path)
+
+    def open_all_file_locations(self) -> None:
+        selection = self.group_listbox.curselection()
+        if not selection:
+            return
+
+        group = self.current_groups[selection[0]]
+
+        existing_paths = [path for path in group if path.exists()]
+
+        if not existing_paths:
+            messagebox.showerror(
+                "Missing files",
+                "None of the files in the selected group exist anymore.",
+            )
+            return
+
+        for path in existing_paths:
+            self._open_in_file_manager(path)
 
     @staticmethod
     def _open_in_file_manager(path: Path) -> None:
